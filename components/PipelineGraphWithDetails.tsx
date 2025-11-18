@@ -11,6 +11,7 @@ import type {
 import { PipelineGraph } from "./PipelineGraph";
 import { JobDetailsPanel } from "./JobDetailsPanel";
 import { AnalysisSummary as AnalysisSummaryPanel } from "./AnalysisSummary";
+import { PipelineStatsStrip } from "./PipelineStatsStrip";
 
 interface PipelineGraphWithDetailsProps {
   pipeline: PipelineModel | null;
@@ -38,6 +39,7 @@ export function PipelineGraphWithDetails(props: PipelineGraphWithDetailsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="flex flex-col gap-4">
+        <PipelineStatsStrip summary={summary} issues={issues} />
         <PipelineGraph graph={graph} selectedJobName={selectedJobName} onSelectJob={setSelectedJobName} />
         <AnalysisSummaryPanel summary={summary} issues={issues} />
       </div>

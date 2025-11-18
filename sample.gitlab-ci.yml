@@ -1,0 +1,61 @@
+# Sample GitLab CI pipeline used by the CI Pipeline Visualizer
+
+stages:
+  - build
+  - test
+  - security
+  - deploy
+
+variables:
+  NODE_ENV: production
+
+build_app:
+  stage: build
+  image: node:20-alpine
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - .next
+      - node_modules/.cache
+    expire_in: 1 week
+
+lint:
+  stage: test
+  needs: [build_app]
+  script:
+    - npm run lint
+
+unit_tests:
+  stage: test
+  needs: [build_app]
+  script:
+    - npm test -- --runInBand
+  dependencies:
+    - build_app
+
+sast_scan:
+  stage: security
+  needs:
+    - job: unit_tests
+  script:
+    - ./scripts/run-sast.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+deploy_prod:
+  stage: deploy
+  needs:
+    - job: unit_tests
+    - job: sast_scan
+  image: alpine:3.19
+  script:
+    - ./scripts/deploy.sh
+  environment:
+    name: production
+    url: https://ci-pipeline-visualizer.example.com
+  only:
+    - main
+
