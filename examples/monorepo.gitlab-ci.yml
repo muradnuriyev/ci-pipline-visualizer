@@ -1,0 +1,150 @@
+# Monorepo-style pipeline: frontend + backend + shared libraries
+
+stages:
+  - lint
+  - build
+  - test
+  - package
+  - deploy
+
+variables:
+  NODE_ENV: test
+  CI_DEBUG_TRACE: "false"
+
+default:
+  image: node:20-alpine
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+      - apps/frontend/node_modules/
+      - apps/backend/node_modules/
+  before_script:
+    - npm ci
+
+lint_root:
+  stage: lint
+  script:
+    - npm run lint
+
+lint_frontend:
+  stage: lint
+  script:
+    - cd apps/frontend
+    - npm run lint
+
+lint_backend:
+  stage: lint
+  script:
+    - cd apps/backend
+    - npm run lint
+
+build_frontend:
+  stage: build
+  needs: ["lint_frontend"]
+  script:
+    - cd apps/frontend
+    - npm run build
+  artifacts:
+    paths:
+      - apps/frontend/.next
+      - apps/frontend/dist
+    expire_in: 1 week
+
+build_backend:
+  stage: build
+  needs: ["lint_backend"]
+  script:
+    - cd apps/backend
+    - npm run build
+  artifacts:
+    paths:
+      - apps/backend/dist
+    expire_in: 1 week
+
+test_unit_frontend:
+  stage: test
+  needs:
+    - job: build_frontend
+  script:
+    - cd apps/frontend
+    - npm test -- --runInBand
+  dependencies:
+    - build_frontend
+
+test_unit_backend:
+  stage: test
+  needs:
+    - job: build_backend
+  script:
+    - cd apps/backend
+    - npm test -- --runInBand
+  dependencies:
+    - build_backend
+
+test_e2e:
+  stage: test
+  image: cypress/included:13.15.0
+  needs:
+    - job: build_frontend
+    - job: build_backend
+  script:
+    - ./scripts/start-stack.sh &
+    - ./scripts/wait-for-http.sh http://localhost:3000
+    - npm run test:e2e
+  dependencies:
+    - build_frontend
+    - build_backend
+
+package_docker_frontend:
+  stage: package
+  image: docker:24.0.9
+  services:
+    - docker:24.0.9-dind
+  needs:
+    - job: build_frontend
+  script:
+    - docker build -f docker/frontend.Dockerfile -t registry.example.com/ci/frontend:${CI_COMMIT_SHA} .
+    - docker push registry.example.com/ci/frontend:${CI_COMMIT_SHA}
+
+package_docker_backend:
+  stage: package
+  image: docker:24.0.9
+  services:
+    - docker:24.0.9-dind
+  needs:
+    - job: build_backend
+  script:
+    - docker build -f docker/backend.Dockerfile -t registry.example.com/ci/backend:${CI_COMMIT_SHA} .
+    - docker push registry.example.com/ci/backend:${CI_COMMIT_SHA}
+
+deploy_staging:
+  stage: deploy
+  image: alpine:3.19
+  needs:
+    - job: package_docker_frontend
+    - job: package_docker_backend
+    - job: test_e2e
+  script:
+    - ./scripts/deploy-staging.sh
+  environment:
+    name: staging
+    url: https://staging.ci-pipeline-visualizer.example.com
+  only:
+    - main
+
+deploy_production:
+  stage: deploy
+  image: alpine:3.19
+  needs:
+    - job: package_docker_frontend
+    - job: package_docker_backend
+  script:
+    - ./scripts/deploy-prod.sh
+  environment:
+    name: production
+    url: https://ci-pipeline-visualizer.example.com
+  when: manual
+  only:
+    - tags
+

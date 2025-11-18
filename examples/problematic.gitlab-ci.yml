@@ -1,0 +1,50 @@
+# Intentionally problematic pipeline to test linting and analysis
+
+stages:
+  - build
+  - test
+  - deploy
+
+build_app:
+  stage: build
+  script:
+    - echo "Building..."
+
+orphan_job:
+  # No stage defined on purpose
+  script:
+    - echo "I have no stage"
+
+test_app:
+  stage: test
+  needs:
+    - job: build_app
+    - job: missing_job           # non-existent dependency
+  script:
+    - echo "Running tests..."
+
+cycle_a:
+  stage: test
+  needs: ["cycle_b"]
+  script:
+    - echo "Part of cycle"
+
+cycle_b:
+  stage: test
+  needs: ["cycle_a"]
+  script:
+    - echo "Part of cycle"
+
+deploy_app:
+  stage: deploy
+  needs:
+    - job: test_app
+    - job: orphan_job
+  script:
+    - echo "Deploying..."
+
+unused_stage_job:
+  stage: review
+  script:
+    - echo "Stage 'review' is not listed in stages"
+

@@ -1,0 +1,92 @@
+# Pipeline with many microservices sharing stages and cross-service dependencies
+
+stages:
+  - build
+  - test
+  - integration
+  - deploy
+
+default:
+  image: node:20-alpine
+
+build_auth:
+  stage: build
+  script:
+    - cd services/auth
+    - npm ci
+    - npm run build
+
+build_billing:
+  stage: build
+  script:
+    - cd services/billing
+    - npm ci
+    - npm run build
+
+build_notifications:
+  stage: build
+  script:
+    - cd services/notifications
+    - npm ci
+    - npm run build
+
+test_auth:
+  stage: test
+  needs: ["build_auth"]
+  script:
+    - cd services/auth
+    - npm test
+
+test_billing:
+  stage: test
+  needs: ["build_billing"]
+  script:
+    - cd services/billing
+    - npm test
+
+test_notifications:
+  stage: test
+  needs: ["build_notifications"]
+  script:
+    - cd services/notifications
+    - npm test
+
+integration_api_gateway:
+  stage: integration
+  needs:
+    - job: test_auth
+    - job: test_billing
+    - job: test_notifications
+  script:
+    - ./scripts/run-api-gateway-integration.sh
+
+integration_user_journeys:
+  stage: integration
+  needs:
+    - job: test_auth
+    - job: test_billing
+  script:
+    - ./scripts/run-user-journey-tests.sh
+
+deploy_canary:
+  stage: deploy
+  needs:
+    - job: integration_api_gateway
+    - job: integration_user_journeys
+  script:
+    - ./scripts/deploy-canary.sh
+  environment:
+    name: canary
+    url: https://canary.example.com
+
+deploy_full:
+  stage: deploy
+  needs:
+    - job: deploy_canary
+  script:
+    - ./scripts/deploy-full.sh
+  environment:
+    name: production
+    url: https://example.com
+  when: manual
+
